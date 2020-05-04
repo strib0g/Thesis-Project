@@ -1,6 +1,8 @@
 ============================================================
 Creating directories
 ============================================================
+mkdir: created directory '/home/fatic/opt'
+mkdir: created directory '/home/fatic/opt/gcc-4.8.5'
 mkdir: created directory '/var/tmp/fatic/gcc-4.8.5_build'
 mkdir: created directory '/var/tmp/fatic/gcc-4.8.5_source'
 mkdir: created directory '/var/tmp/fatic/gcc-4.8.5_taballs'
