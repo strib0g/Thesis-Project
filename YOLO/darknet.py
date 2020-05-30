@@ -252,6 +252,7 @@ def detect(net, meta, image, objects, frame, thresh=.5, hier_thresh=.5, nms=.45,
     #pylint: disable= C0321
     im = load_image(image, 0, 0)
     if debug: print("Loaded image")
+    image = image.decode('ascii')
     ret = detect_image(net, meta, im, objects, frame, image, thresh, hier_thresh, nms, debug)
     free_image(im)
     if debug: print("freed image")
@@ -267,7 +268,7 @@ def detect_image(net, meta, im, objects, frame, imgName, thresh=.5, hier_thresh=
     #custom_image = cv2.imread(tf.image.decode_jpeg(im))
     #im, arr = array_to_image(custom_image)		# you should comment line below: free_image(im)
     import random
-    imgName = imgName[:-3]
+    imgName = imgName[:-4]
     num = c_int(0)
     if debug: print("Assigned num")
     pnum = pointer(num)
@@ -289,13 +290,13 @@ def detect_image(net, meta, im, objects, frame, imgName, thresh=.5, hier_thresh=
     if debug: print("about to range")
     #print("first for loop")
     for j in range(num):
-        #print("in first for loop")
+        print("in first for loop")
         if debug: print("Ranging on "+str(j)+" of "+str(num))
         if debug: print("Classes: "+str(meta), meta.classes, meta.names)
         for i in range(meta.classes):
-           # print("in second loop")
+            print("in second loop")
             if debug: print("Class-ranging on "+str(i)+" of "+str(meta.classes)+"= "+str(dets[j].prob[i]))
-            if dets[j].prob[i] > 0:
+            if dets[j].prob[i] > 0.5:
                 b = dets[j].bbox
                 if altNames is None:
                     nameTag = meta.names[i]
@@ -308,25 +309,40 @@ def detect_image(net, meta, im, objects, frame, imgName, thresh=.5, hier_thresh=
                 o = metrics_pb2.Object()
                 o.context_name = frame.context.name
                 for camera_labels in frame.camera_labels:
-                    if camera_labels.name == imgName:
-                        o.camera_name = camera_labels.name
-                box = label_pb2.Label.Box()
-                box.center_x = b.x
-                box.center_y = b.y
-                box.height = b.h
-                box.width = b.w
-                o.object.box.CopyFrom(box)
-                o.score = dets[j].prob[i]
-                o.object.id = str(frame.timestamp_micros)
-                if nameTag == 'person':
-                    o.object.type = label_pb2.Label.TYPE_PEDESTRIAN                 
-                elif nameTag == 'car':
-                    o.object.type = label_pb2.Label.TYPE_VEHICLE
-                elif nameTag == 'bicycle':
-                    o.object.type = label_pb2.Label.TYPE_CYCLIST
-                elif nameTag == 'stop sign':
-                    o.object.type = label_pb2.Label.TYPE_SIGN
-                objects.objects.append(o)
+                    print("=======CAMERA NAME: "+ str(camera_labels.name) + "===========")
+                    if str(camera_labels.name) == imgName:
+                        if camera_labels.name == 0:
+                            o.camera_name = dataset_pb2.CameraName.UNKNOWN
+                        elif camera_labels.name == 1:
+                            o.camera_name = dataset_pb2.CameraName.FRONT
+                        elif camera_labels.name == 2:
+                            o.camera_name = dataset_pb2.CameraName.FRONT_LEFT
+                        elif camera_labels.name == 3:
+                            o.camera_name = dataset_pb2.CameraName.FRONT_RIGHT
+                        elif camera_labels.name == 4:
+                            o.camera_name = dataset_pb2.CameraName.SIDE_LEFT
+                        elif camera_labels.name == 5:
+                            o.camera_name = dataset_pb2.CameraName.SIDE_RIGHT
+       
+                        o.frame_timestamp_micros = frame.timestamp_micros
+                        box = label_pb2.Label.Box()
+                        box.center_x = b.x
+                        box.center_y = b.y
+                        box.length = b.w
+                        box.width = b.h
+                        o.object.box.CopyFrom(box)
+                        o.score = dets[j].prob[i]
+                        o.object.id = str(frame.timestamp_micros) 
+                        if nameTag == 'person':
+                            o.object.type = label_pb2.Label.TYPE_PEDESTRIAN                 
+                        elif nameTag == 'car':
+                            o.object.type = label_pb2.Label.TYPE_VEHICLE
+                        elif nameTag == 'bicycle':
+                            o.object.type = label_pb2.Label.TYPE_CYCLIST
+                        elif nameTag == 'stop sign':
+                            o.object.type = label_pb2.Label.TYPE_SIGN
+                        objects.objects.append(o)
+
     if debug: print("did range")
     res = sorted(res, key=lambda x: -x[1])
     if debug: print("did sort")
@@ -349,14 +365,20 @@ def loadRecord(filepath, preds, objects):
         print(nFrames)
         frame=dataset_pb2.Frame()
         frame.ParseFromString(bytearray(data.numpy()))
+        print(frame.camera_labels)
         for index, img in enumerate(frame.images):
             print("enter second loop")
-            f = open(str(img.name)+'.jpg', "wb+")
+            print(img.name)
+            print(str(img.name))
+            f = open(str(img.name)+".jpg", "wb+")
+            print(str(img.name)+".jpg")
             f.write(img.image)
             print("performing detection:")
-            performDetect(preds, objects, frame, str(img.name)+'.jpg')
+            performDetect(preds, objects, frame, str(img.name)+".jpg")
             f.close()
             os.remove(str(img.name)+'.jpg')
+            print(objects)
+
     print(nFrames)
     return nFrames
 
@@ -435,7 +457,7 @@ def performDetect(preds, objects, frame, imagePath="data/dog.jpg", thresh= 0.25,
        raise ValueError("Invalid image path `"+os.path.abspath(imagePath)+"`")
     # Do the detection
     #detections = detect(netMain, metaMain, imagePath, thresh)	# if is used cv2.imread(image)
-    detections = detect(netMain, metaMain, imagePath.encode("ascii"), objects, frame, thresh)
+    detections = detect(netMain, metaMain, imagePath.encode('ascii'), objects, frame, thresh)
    # if showImage:
    #     try:
    #         from skimage import io, draw
@@ -558,14 +580,16 @@ def performBatchDetect(thresh= 0.25, configPath = "./cfg/yolov4.cfg", weightPath
     return batch_boxes, batch_scores, batch_classes    
 if __name__ == "__main__":
 
-    preds = open('preds.bin', 'wb')
+    tf.enable_eager_execution()
+    preds = open('/mnt/pool0-100/filip/preds2.bin', 'wb')
     objects = metrics_pb2.Objects()
     totalFrames = 0
-    with open('files.txt', 'r') as files:
-        for line in files:
-            path = line.strip()
-            totalFrames = totalFrames + loadRecord(path, preds, objects)
+   # with open('files.txt', 'r') as files:
+   #     for line in files:
+   #         path = line.strip()
+   #         totalFrames = totalFrames + loadRecord(path, preds, objects)
     print(totalFrames)
+    loadRecord("/mnt/pool0-100/shape-it/validation_data/segment-967082162553397800_5102_900_5122_900_with_camera_labels.tfrecord", preds, objects)
     #print(performDetect())
     #Uncomment the following line to see batch inference working 
     #print(performBatchDetect())
