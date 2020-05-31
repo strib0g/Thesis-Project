@@ -103,7 +103,6 @@ if __name__ == '__main__':
     # im_names = os.listdir('examples/images')
     #im_names = ['000456.jpg', '000542.jpg', '001150.jpg', '001763.jpg', '004545.jpg']
     
-    #TODO add file
     filepath='/mnt/pool0-100/shape-it/validation_data/segment-17136314889476348164_979_560_999_560_with_camera_labels.tfrecord'
     dataset=tf.data.TFRecordDataset(filepath, compression_type='')
     numFrames = 0
