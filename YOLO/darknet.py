@@ -221,6 +221,8 @@ network_predict_batch.argtypes = [c_void_p, IMAGE, c_int, c_int, c_int,
                                    c_float, c_float, POINTER(c_int), c_int, c_int]
 network_predict_batch.restype = POINTER(DETNUMPAIR)
 
+
+nObjects = 0
 def array_to_image(arr):
     import numpy as np
     # need to return old values to avoid python freeing memory
@@ -290,6 +292,10 @@ def detect_image(net, meta, im, objects, frame, imgName, thresh=.5, hier_thresh=
     if debug: print("about to range")
     #print("first for loop")
     for j in range(num):
+        global nObjects
+        if nObjects >= 400:
+            print("number of objects exceeded, breaking")
+            break
         print("in first for loop")
         if debug: print("Ranging on "+str(j)+" of "+str(num))
         if debug: print("Classes: "+str(meta), meta.classes, meta.names)
@@ -309,7 +315,7 @@ def detect_image(net, meta, im, objects, frame, imgName, thresh=.5, hier_thresh=
                 o = metrics_pb2.Object()
                 o.context_name = frame.context.name
                 for camera_labels in frame.camera_labels:
-                    print("=======CAMERA NAME: "+ str(camera_labels.name) + "===========")
+                    #print("=======CAMERA NAME: "+ str(camera_labels.name) + "===========")
                     if str(camera_labels.name) == imgName:
                         if camera_labels.name == 0:
                             o.camera_name = dataset_pb2.CameraName.UNKNOWN
@@ -334,7 +340,7 @@ def detect_image(net, meta, im, objects, frame, imgName, thresh=.5, hier_thresh=
                         o.score = dets[j].prob[i]
                         o.object.id = str(frame.timestamp_micros) 
                         if nameTag == 'person':
-                            o.object.type = label_pb2.Label.TYPE_PEDESTRIAN                 
+                            o.object.type = label_pb2.Label.TYPE_PEDESTRIAN
                         elif nameTag == 'car':
                             o.object.type = label_pb2.Label.TYPE_VEHICLE
                         elif nameTag == 'bicycle':
@@ -342,6 +348,8 @@ def detect_image(net, meta, im, objects, frame, imgName, thresh=.5, hier_thresh=
                         elif nameTag == 'stop sign':
                             o.object.type = label_pb2.Label.TYPE_SIGN
                         objects.objects.append(o)
+                        nObjects=nObjects+1
+                        print("Object added: " + str(nObjects))
 
     if debug: print("did range")
     res = sorted(res, key=lambda x: -x[1])
@@ -355,34 +363,41 @@ netMain = None
 metaMain = None
 altNames = None
 
-def loadRecord(filepath, preds, objects):
+def loadRecord(filepath, objects):
     nFrames=0
+    global nObjects
     print("loadRecord: " + filepath)
     dataset = tf.data.TFRecordDataset(filepath, compression_type='')
     for data in dataset:
         print("enter first loop")
-        nFrames=nFrames+1   
-        print(nFrames)
+        nFrames=nFrames+1
+        nObjects=0
         frame=dataset_pb2.Frame()
         frame.ParseFromString(bytearray(data.numpy()))
-        print(frame.camera_labels)
+        #print(frame.camera_labels)
         for index, img in enumerate(frame.images):
             print("enter second loop")
-            print(img.name)
-            print(str(img.name))
+            #print(img.name)
+            #print(str(img.name))
             f = open(str(img.name)+".jpg", "wb+")
-            print(str(img.name)+".jpg")
+            #print(str(img.name)+".jpg")
             f.write(img.image)
             print("performing detection:")
-            performDetect(preds, objects, frame, str(img.name)+".jpg")
+            performDetect(objects, frame, str(img.name)+".jpg")
             f.close()
             os.remove(str(img.name)+'.jpg')
-            print(objects)
+            #print(objects)
+            print("objects in image:" + str(nObjects))
+            break
+        if(nFrames>=3):
+            break
 
     print(nFrames)
     return nFrames
 
-def performDetect(preds, objects, frame, imagePath="data/dog.jpg", thresh= 0.25, configPath = "./cfg/yolov4.cfg", weightPath = "yolov4.weights", metaPath= "./cfg/coco.data", showImage= True, makeImageOnly = False, initOnly= False):
+numPics = 0
+
+def performDetect(objects, frame, imagePath="data/dog.jpg", thresh= 0.25, configPath = "./cfg/yolov4.cfg", weightPath = "yolov4.weights", metaPath= "./cfg/coco.data", showImage= True, makeImageOnly = True, initOnly= False):
     """
     Convenience function to handle the detection and returns of objects.
     Displaying bounding boxes requires libraries scikit-image and numpy
@@ -458,60 +473,61 @@ def performDetect(preds, objects, frame, imagePath="data/dog.jpg", thresh= 0.25,
     # Do the detection
     #detections = detect(netMain, metaMain, imagePath, thresh)	# if is used cv2.imread(image)
     detections = detect(netMain, metaMain, imagePath.encode('ascii'), objects, frame, thresh)
-   # if showImage:
-   #     try:
-   #         from skimage import io, draw
-   #         import numpy as np
-   #         image = io.imread(imagePath)
-   #         print("*** "+str(len(detections))+" Results, color coded by confidence ***")
-   #         imcaption = []
-   #         for detection in detections:
-   #             label = detection[0]
-   #             confidence = detection[1]
-   #             pstring = label+": "+str(np.rint(100 * confidence))+"%"
-   #             imcaption.append(pstring)
-   #             print(pstring)
-   #             bounds = detection[2]
-   #             shape = image.shape
-   #             # x = shape[1]
-   #             # xExtent = int(x * bounds[2] / 100)
-   #             # y = shape[0]
-   #             # yExtent = int(y * bounds[3] / 100)
-   #             yExtent = int(bounds[3])
-   #             xEntent = int(bounds[2])
-   #             # Coordinates are around the center
-   #             xCoord = int(bounds[0] - bounds[2]/2)
-   #             yCoord = int(bounds[1] - bounds[3]/2)
-   #             boundingBox = [
-   #                 [xCoord, yCoord],
-   #                 [xCoord, yCoord + yExtent],
-   #                 [xCoord + xEntent, yCoord + yExtent],
-   #                 [xCoord + xEntent, yCoord]
-   #             ]
-   #             # Wiggle it around to make a 3px border
-   #             rr, cc = draw.polygon_perimeter([x[1] for x in boundingBox], [x[0] for x in boundingBox], shape= shape)
-   #             rr2, cc2 = draw.polygon_perimeter([x[1] + 1 for x in boundingBox], [x[0] for x in boundingBox], shape= shape)
-   #             rr3, cc3 = draw.polygon_perimeter([x[1] - 1 for x in boundingBox], [x[0] for x in boundingBox], shape= shape)
-   #             rr4, cc4 = draw.polygon_perimeter([x[1] for x in boundingBox], [x[0] + 1 for x in boundingBox], shape= shape)
-   #             rr5, cc5 = draw.polygon_perimeter([x[1] for x in boundingBox], [x[0] - 1 for x in boundingBox], shape= shape)
-   #             boxColor = (int(255 * (1 - (confidence ** 2))), int(255 * (confidence ** 2)), 0)
-   #             draw.set_color(image, (rr, cc), boxColor, alpha= 0.8)
-   #             draw.set_color(image, (rr2, cc2), boxColor, alpha= 0.8)
-   #             draw.set_color(image, (rr3, cc3), boxColor, alpha= 0.8)
-   #             draw.set_color(image, (rr4, cc4), boxColor, alpha= 0.8)
-   #             draw.set_color(image, (rr5, cc5), boxColor, alpha= 0.8)
-   #         if not makeImageOnly:
-   #             io.imshow(image)
-   #             io.show()
-   #         detections = {
-   #             "detections": detections,
-   #             "image": image,
-   #             "caption": "\n<br/>".join(imcaption)
-   #         }
-   #     except Exception as e:
-   #         print("Unable to show image: "+str(e))
-    print("writing:")
-    preds.write(objects.SerializeToString())
+    if showImage:
+        try:
+            from skimage import io, draw
+            import numpy as np
+            image = io.imread(imagePath)
+            print("*** "+str(len(detections))+" Results, color coded by confidence ***")
+            imcaption = []
+            for detection in detections:
+                label = detection[0]
+                confidence = detection[1]
+                pstring = label+": "+str(np.rint(100 * confidence))+"%"
+                imcaption.append(pstring)
+                print(pstring)
+                bounds = detection[2]
+                shape = image.shape
+                x = shape[1]
+                xExtent = int(x * bounds[2] / 100)
+                y = shape[0]
+                yExtent = int(y * bounds[3] / 100)
+                yExtent = int(bounds[3])
+                xEntent = int(bounds[2])
+                # Coordinates are around the center
+                xCoord = int(bounds[0] - bounds[2]/2)
+                yCoord = int(bounds[1] - bounds[3]/2)
+                boundingBox = [
+                    [xCoord, yCoord],
+                    [xCoord, yCoord + yExtent],
+                    [xCoord + xEntent, yCoord + yExtent],
+                    [xCoord + xEntent, yCoord]
+                ]
+                # Wiggle it around to make a 3px border
+                rr, cc = draw.polygon_perimeter([x[1] for x in boundingBox], [x[0] for x in boundingBox], shape= shape)
+                rr2, cc2 = draw.polygon_perimeter([x[1] + 1 for x in boundingBox], [x[0] for x in boundingBox], shape= shape)
+                rr3, cc3 = draw.polygon_perimeter([x[1] - 1 for x in boundingBox], [x[0] for x in boundingBox], shape= shape)
+                rr4, cc4 = draw.polygon_perimeter([x[1] for x in boundingBox], [x[0] + 1 for x in boundingBox], shape= shape)
+                rr5, cc5 = draw.polygon_perimeter([x[1] for x in boundingBox], [x[0] - 1 for x in boundingBox], shape= shape)
+                boxColor = (int(255 * (1 - (confidence ** 2))), int(255 * (confidence ** 2)), 0)
+                draw.set_color(image, (rr, cc), boxColor, alpha= 0.8)
+                draw.set_color(image, (rr2, cc2), boxColor, alpha= 0.8)
+                draw.set_color(image, (rr3, cc3), boxColor, alpha= 0.8)
+                draw.set_color(image, (rr4, cc4), boxColor, alpha= 0.8)
+                draw.set_color(image, (rr5, cc5), boxColor, alpha= 0.8)
+                global numPics
+                io.imsave("/mnt/pool0-100/filip/images/yolo/04003_" + str(numPics) + ".jpg", image)
+                numPics = numPics+1
+            if not makeImageOnly:
+                io.imshow(image)
+                io.show()
+            detections = {
+                "detections": detections,
+                "image": image,
+                "caption": "\n<br/>".join(imcaption)
+            }
+        except Exception as e:
+            print("Unable to show image: "+str(e))
     return detections
 
 def performBatchDetect(thresh= 0.25, configPath = "./cfg/yolov4.cfg", weightPath = "yolov4.weights", metaPath= "./cfg/coco.data", hier_thresh=.5, nms=.45, batch_size=3):
@@ -581,7 +597,7 @@ def performBatchDetect(thresh= 0.25, configPath = "./cfg/yolov4.cfg", weightPath
 if __name__ == "__main__":
 
     tf.enable_eager_execution()
-    preds = open('/mnt/pool0-100/filip/preds2.bin', 'wb')
+    #preds = open('/mnt/pool0-100/filip/preds2.bin', 'wb')
     objects = metrics_pb2.Objects()
     totalFrames = 0
    # with open('files.txt', 'r') as files:
@@ -589,7 +605,7 @@ if __name__ == "__main__":
    #         path = line.strip()
    #         totalFrames = totalFrames + loadRecord(path, preds, objects)
     print(totalFrames)
-    loadRecord("/mnt/pool0-100/shape-it/validation_data/segment-967082162553397800_5102_900_5122_900_with_camera_labels.tfrecord", preds, objects)
+    loadRecord("/mnt/pool0-100/shape-it/validation_data/segment-14486517341017504003_3406_349_3426_349_with_camera_labels.tfrecord", objects)
     #print(performDetect())
     #Uncomment the following line to see batch inference working 
     #print(performBatchDetect())
