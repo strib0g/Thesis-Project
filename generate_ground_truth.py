@@ -43,6 +43,5 @@ for data in dataset:                #iterates through all frames in the record f
             o.object.detection_difficulty_level = label.detection_difficulty_level      #difficulty level of object - used when dividing results into difficulty classes on eval server
             o.object.num_lidar_points_in_box: 6                 #num of lidar points - not used in 2d detection - should still be populated by value >5
         objects.objects.append(o)
-    break
 ground.write(objects.SerializeToString())
 
